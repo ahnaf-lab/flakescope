@@ -96,6 +96,32 @@ single one-off failure. See `test/fixtures/sample-history.jsonl` for seeded
 example data covering an always-passing, an always-failing, an established
 50/50 flake, and two low-evidence cases.
 
+### Report view
+
+```sh
+flakescope report --log .flakescope/history.jsonl
+```
+
+Reads the same per-test JSONL history log, ranks every test by flakiness
+score (most flaky first), and prints a table with a sparkline of its recent
+pass/fail pattern — `_` for a pass, `#` for a fail, oldest run on the left:
+
+```
+RANK  SCORE  RUNS  PASS  FAIL  SPARK       TEST
+----  -----  ----  ----  ----  ----------  --------------------------
+   1  0.237    10     5     5  _#_#_#_#_#  suite/truly-flaky.test.js
+   2  0.000    10    10     0  __________  suite/always-pass.test.js
+```
+
+Options:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--log <path>` | `.flakescope/history.jsonl` | Per-test JSONL history log to read. |
+| `--limit <n>` | `20` | Max number of tests to show, `0` for all. |
+| `--width <n>` | `30` | Max number of most-recent runs shown per sparkline. |
+| `--json` | off | Print the ranked rows as JSON instead of a table. |
+
 ## Status
 
 This project is built and shipped autonomously, gated on a passing test

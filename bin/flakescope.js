@@ -2,8 +2,10 @@
 import path from 'node:path';
 import { tokenizeCommand } from '../src/tokenize.js';
 import { Daemon } from '../src/daemon.js';
+import { buildReport, renderTable } from '../src/report.js';
 
 const DEFAULT_LOG_PATH = path.join('.flakescope', 'results.jsonl');
+const DEFAULT_HISTORY_PATH = path.join('.flakescope', 'history.jsonl');
 
 function parseArgs(argv) {
   const opts = {
@@ -79,7 +81,93 @@ Options:
 `);
 }
 
+function parseReportArgs(argv) {
+  const opts = {
+    logPath: DEFAULT_HISTORY_PATH,
+    limit: 20,
+    sparkWidth: 30,
+    json: false,
+    help: false,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    switch (arg) {
+      case '--log':
+        opts.logPath = argv[++i];
+        break;
+      case '--limit':
+        opts.limit = Number(argv[++i]);
+        break;
+      case '--width':
+        opts.sparkWidth = Number(argv[++i]);
+        break;
+      case '--json':
+        opts.json = true;
+        break;
+      case '--help':
+      case '-h':
+        opts.help = true;
+        break;
+      default:
+        throw new Error(`unknown argument: ${arg}`);
+    }
+  }
+
+  return opts;
+}
+
+function printReportHelp() {
+  console.log(`flakescope report - show the flakiest tests as a table with sparklines
+
+Usage:
+  flakescope report [options]
+
+Options:
+  --log <path>    path to the per-test JSONL history log
+                  (default .flakescope/history.jsonl)
+  --limit <n>     max number of tests to show, 0 = all (default 20)
+  --width <n>     max number of runs shown per sparkline (default 30)
+  --json          print the ranked rows as JSON instead of a table
+  --help, -h      show this help
+`);
+}
+
+async function runReport(argv) {
+  const opts = parseReportArgs(argv);
+
+  if (opts.help) {
+    printReportHelp();
+    return;
+  }
+
+  let rows;
+  try {
+    rows = await buildReport(opts.logPath, { limit: opts.limit, sparkWidth: opts.sparkWidth });
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.error(`[flakescope] no history log found at ${opts.logPath}`);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+
+  console.log(renderTable(rows));
+}
+
 async function main() {
+  const [sub, ...rest] = process.argv.slice(2);
+
+  if (sub === 'report') {
+    return runReport(rest);
+  }
+
   const opts = parseArgs(process.argv.slice(2));
 
   if (opts.help || !opts.command) {
