@@ -122,6 +122,44 @@ Options:
 | `--width <n>` | `30` | Max number of most-recent runs shown per sparkline. |
 | `--json` | off | Print the ranked rows as JSON instead of a table. |
 
+### Threshold alerts
+
+```sh
+flakescope alert --config .flakescope/config.json --log .flakescope/history.jsonl --out .flakescope/alerts.json
+```
+
+Reads the same per-test JSONL history log, ranks every test by flakiness
+score, and writes a JSON summary listing only the tests whose score is at or
+above a confidence threshold. The threshold is config-driven, not
+hard-coded: it comes from a JSON file (default `.flakescope/config.json`,
+shape `{"threshold": 0.3}`), so alerting can be tuned per-project without
+touching code. A missing config file just means "use the default threshold
+(0.3)" — it is not an error; a config file that exists but fails to parse,
+or holds a threshold outside `[0, 1]`, is.
+
+The summary file is written **only when at least one test crosses the
+threshold** — a clean run leaves no file behind, so its presence is itself
+the signal:
+
+```json
+{
+  "generatedAt": "2026-08-24T00:00:00.000Z",
+  "threshold": 0.3,
+  "crossings": [
+    { "test": "suite/truly-flaky.test.js", "score": 0.237, "runs": 10, "passes": 5, "failures": 5 }
+  ]
+}
+```
+
+Options:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--log <path>` | `.flakescope/history.jsonl` | Per-test JSONL history log to read. |
+| `--config <path>` | `.flakescope/config.json` | JSON config file holding `{"threshold": <0..1>}`. |
+| `--out <path>` | `.flakescope/alerts.json` | Where to write the summary, only if a test crosses the threshold. |
+| `--threshold <n>` | *(from config)* | Override the configured threshold for this run. |
+
 ## Status
 
 This project is built and shipped autonomously, gated on a passing test

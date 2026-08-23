@@ -3,9 +3,13 @@ import path from 'node:path';
 import { tokenizeCommand } from '../src/tokenize.js';
 import { Daemon } from '../src/daemon.js';
 import { buildReport, renderTable } from '../src/report.js';
+import { loadConfig } from '../src/config.js';
+import { checkThreshold } from '../src/alerts.js';
 
 const DEFAULT_LOG_PATH = path.join('.flakescope', 'results.jsonl');
 const DEFAULT_HISTORY_PATH = path.join('.flakescope', 'history.jsonl');
+const DEFAULT_CONFIG_PATH = path.join('.flakescope', 'config.json');
+const DEFAULT_SUMMARY_PATH = path.join('.flakescope', 'alerts.json');
 
 function parseArgs(argv) {
   const opts = {
@@ -161,11 +165,102 @@ async function runReport(argv) {
   console.log(renderTable(rows));
 }
 
+function parseAlertArgs(argv) {
+  const opts = {
+    logPath: DEFAULT_HISTORY_PATH,
+    configPath: DEFAULT_CONFIG_PATH,
+    outPath: DEFAULT_SUMMARY_PATH,
+    threshold: undefined,
+    help: false,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    switch (arg) {
+      case '--log':
+        opts.logPath = argv[++i];
+        break;
+      case '--config':
+        opts.configPath = argv[++i];
+        break;
+      case '--out':
+        opts.outPath = argv[++i];
+        break;
+      case '--threshold':
+        opts.threshold = Number(argv[++i]);
+        break;
+      case '--help':
+      case '-h':
+        opts.help = true;
+        break;
+      default:
+        throw new Error(`unknown argument: ${arg}`);
+    }
+  }
+
+  return opts;
+}
+
+function printAlertHelp() {
+  console.log(`flakescope alert - write a summary file for tests whose flakiness score
+crosses a config-driven confidence threshold
+
+Usage:
+  flakescope alert [options]
+
+Options:
+  --log <path>        per-test JSONL history log to read
+                       (default .flakescope/history.jsonl)
+  --config <path>      JSON config file holding { "threshold": <0..1> }
+                       (default .flakescope/config.json, missing file = defaults)
+  --out <path>         where to write the alert summary, only if a test
+                       crosses the threshold (default .flakescope/alerts.json)
+  --threshold <n>       override the configured threshold for this run
+  --help, -h            show this help
+`);
+}
+
+async function runAlert(argv) {
+  const opts = parseAlertArgs(argv);
+
+  if (opts.help) {
+    printAlertHelp();
+    return;
+  }
+
+  const config = await loadConfig(opts.configPath);
+  const threshold = Number.isFinite(opts.threshold) ? opts.threshold : config.threshold;
+
+  let result;
+  try {
+    result = await checkThreshold(opts.logPath, opts.outPath, threshold);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.error(`[flakescope] no history log found at ${opts.logPath}`);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+
+  if (result.written) {
+    console.log(
+      `[flakescope] ${result.crossings.length} test(s) crossed threshold ${threshold} — wrote ${result.path}`,
+    );
+  } else {
+    console.log(`[flakescope] no test crossed threshold ${threshold} — no summary written`);
+  }
+}
+
 async function main() {
   const [sub, ...rest] = process.argv.slice(2);
 
   if (sub === 'report') {
     return runReport(rest);
+  }
+
+  if (sub === 'alert') {
+    return runAlert(rest);
   }
 
   const opts = parseArgs(process.argv.slice(2));
