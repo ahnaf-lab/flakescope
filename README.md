@@ -160,6 +160,41 @@ Options:
 | `--out <path>` | `.flakescope/alerts.json` | Where to write the summary, only if a test crosses the threshold. |
 | `--threshold <n>` | *(from config)* | Override the configured threshold for this run. |
 
+### Deterministic harness
+
+`src/fixtures.js` generates synthetic per-test run history from a seeded
+pseudo-random generator, for validating the scoring math against a known
+ground truth instead of hand-picked history arrays. Each fixture test
+declares its true failure probability; the generator draws one number per
+test per simulated run from a small deterministic PRNG (`createRng`, a
+mulberry32 implementation — no dependency, not cryptographic) and produces
+the same `{test, passed, timestamp}` records `src/history.js` reads:
+
+```js
+import { generateFixtureHistory, toJsonl } from './src/fixtures.js';
+
+const records = generateFixtureHistory(
+  [
+    { name: 'suite/coin-flip.test.js', pFail: 0.5 },
+    { name: 'suite/rare-flake.test.js', pFail: 0.05 },
+  ],
+  300, // simulated runs
+  20260825, // seed
+);
+
+await writeFile('history.jsonl', toJsonl(records));
+```
+
+The same seed always reproduces the same history, so a failing assertion
+reproduces exactly and the fixtures double as a regression harness for the
+Wilson-based scoring in `src/score.js`. `test/harness.test.js` feeds seeded
+fixture output through the real pipeline end to end — `readHistory` →
+`rankFlakiness` → `buildReport` / `checkThreshold` — and checks the results
+against the fixtures' known failure probabilities: an always-passing and an
+always-failing test both score exactly 0, an established 50/50 flake
+outranks a rare one, and two independent runs with the same seed produce
+byte-identical scores.
+
 ## Status
 
 This project is built and shipped autonomously, gated on a passing test
